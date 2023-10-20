@@ -1,15 +1,17 @@
 # Fixit planning problem
-# translation from Ruby implementation fixit.rb
+# Translation from Dave Touretzky's Ruby implementation fixit.rb
 # Jonathan Li, October 2018
 
 from graphplan import *
 
+# Types
 WHEEL = 'Wheel'
 HUB = 'Hub'
 NUT = 'Nut'
 CONTAINER = 'Container'
 TOOL = 'Tool'
 
+# Instances
 i_wheel1 = Instance('wheel1', WHEEL)
 i_wheel2 = Instance('wheel2', WHEEL)
 i_hub = Instance('hub', HUB)
@@ -20,237 +22,208 @@ i_pump = Instance('pump', TOOL)
 i_wrench = Instance('wrench', TOOL)
 
 
+# Variables
 v_container = Variable('container', CONTAINER)
 v_wheel = Variable('wheel', WHEEL)
 v_tool = Variable('tool', TOOL)
 v_nut = Variable('nut', NUT)
 v_hub = Variable('hub', HUB)
 
+# operators
+
 o_cuss = Operator(
     'cuss',
-    # Parameters
-    [],
     # Preconditions
     [],
     # Adds
-    [Proposition.newish('not_annoyed',[])],
+    [Proposition('not_annoyed')],
     # Deletes
     [] 
 )
 
 o_open = Operator(
     'open',
-    # Parameters
-    [v_container],
     # Preconditions
-    [Proposition.newish('not_open', [v_container])],
+    [Proposition('not_open', v_container)],
     # Adds
-    [Proposition.newish('open', [v_container])],
+    [Proposition('open', v_container)],
     # Deletes
-    [Proposition.newish('not_open', [v_container])]
+    [Proposition('not_open', v_container)]
 )
 
 o_close = Operator(
     'close',
-    # Parameters
-    [v_container],
     # Preconditions
-    [Proposition.newish('open', [v_container])],
+    [Proposition('open', v_container)],
     # Adds
-    [Proposition.newish('not_open', [v_container])],
+    [Proposition('not_open', v_container)],
     # Deletes
-    [Proposition.newish('open', [v_container])]
+    [Proposition('open', v_container)]
 )
 
 o_fetch_tool = Operator(
     'fetch_tool',
-    # Parameters
-    [v_tool, v_container],
     # Preconditions
-    [Proposition.newish('in', [v_tool, v_container]),
-     Proposition.newish('open', [v_container])],
+    [Proposition('in', v_tool, v_container),
+     Proposition('open', v_container)],
     # Adds
-    [Proposition.newish('have', [v_tool])],
+    [Proposition('have', v_tool)],
     # Deletes
-    [Proposition.newish('in', [v_tool, v_container])]
+    [Proposition('in', v_tool, v_container)]
 )
 
 o_fetch_wheel = Operator(
     'fetch_wheel',
-    # Parameters
-    [v_wheel, v_container],
     # Preconditions
-    [Proposition.newish('in', [v_wheel, v_container]),
-     Proposition.newish('open', [v_container])],
+    [Proposition('in', v_wheel, v_container),
+     Proposition('open', v_container)],
     # Adds
-    [Proposition.newish('have', [v_wheel])],
+    [Proposition('have', v_wheel)],
     # Deletes
-    [Proposition.newish('in', [v_wheel, v_container])]
+    [Proposition('in', v_wheel, v_container)]
 )
 
 o_put_away_tool = Operator(
     'put_away_tool',
-    # Parameters
-    [v_tool, v_container],
     # Preconditions
-    [Proposition.newish('have', [v_tool]),
-     Proposition.newish('open', [v_container])],
+    [Proposition('have', v_tool),
+     Proposition('open', v_container)],
     # Adds
-    [Proposition.newish('in', [v_tool, v_container])],
+    [Proposition('in', v_tool, v_container)],
     # Deletes
-    [Proposition.newish('have', [v_tool])]
+    [Proposition('have', v_tool)]
 )
 
 
 o_put_away_wheel = Operator(
     'put_away_wheel',
-    # Parameters
-    [v_wheel, v_container],
     # Preconditions
-    [Proposition.newish('have', [v_wheel]),
-     Proposition.newish('open', [v_container])],
+    [Proposition('have', v_wheel),
+     Proposition('open', v_container)],
     # Adds
-    [Proposition.newish('in', [v_wheel, v_container])],
+    [Proposition('in', v_wheel, v_container)],
     # Deletes
-    [Proposition.newish('have', [v_wheel])]
+    [Proposition('have', v_wheel)]
 )
 
 o_loosen = Operator(
     'loosen',
-    # Parameters
-    [v_nut, v_hub],
     # Preconditions
-    [Proposition.newish('have', [i_wrench]),
-     Proposition.newish('tight', [v_nut, v_hub]),
-     Proposition.newish('on_ground', [v_hub])],
+    [Proposition('have', i_wrench),
+     Proposition('tight', v_nut, v_hub),
+     Proposition('on_ground', v_hub)],
     # Adds
-    [Proposition.newish('loose', [v_nut, v_hub])],
+    [Proposition('loose', v_nut, v_hub)],
     # Deletes
-    [Proposition.newish('tight', [v_nut, v_hub])]
+    [Proposition('tight', v_nut, v_hub)]
 )
 
 o_tighten = Operator(
     'tighten',
-    # Parameters
-    [v_nut, v_hub],
     # Preconditions
-    [Proposition.newish('have', [i_wrench]),
-     Proposition.newish('loose', [v_nut, v_hub]),
-     Proposition.newish('on_ground', [v_hub])],
+    [Proposition('have', i_wrench),
+     Proposition('loose', v_nut, v_hub),
+     Proposition('on_ground', v_hub)],
     # Adds
-    [Proposition.newish('tight', [v_nut, v_hub])],
+    [Proposition('tight', v_nut, v_hub)],
     # Deletes
-    [Proposition.newish('loose', [v_nut, v_hub])]
+    [Proposition('loose', v_nut, v_hub)]
 )
 
 o_jack_up = Operator(
     'jack_up',
-    # Parameters
-    [v_hub],
     # Preconditions
-    [Proposition.newish('on_ground', [v_hub]),
-     Proposition.newish('have', [i_jack])],
+    [Proposition('on_ground', v_hub),
+     Proposition('have', i_jack)],
     # Adds
-    [Proposition.newish('not_on_ground', [v_hub])],
+    [Proposition('not_on_ground', v_hub)],
     # Deletes
-    [Proposition('have', [i_jack]),
-     Proposition.newish('on_ground', [v_hub])]
+    [Proposition('have', i_jack),
+     Proposition('on_ground', v_hub)]
 )    
 
 o_jack_down = Operator(
     'jack_down',
-    # Parameters
-    [v_hub],
     # Preconditions
-    [Proposition.newish('not_on_ground', [v_hub])],
+    [Proposition('not_on_ground', v_hub)],
     # Adds
-    [Proposition.newish('on_ground', [v_hub]),
-     Proposition.newish('have', [i_jack])],
+    [Proposition('on_ground', v_hub),
+     Proposition('have', i_jack)],
     # Deletes
-    [Proposition.newish('not_on_ground', [v_hub])]
+    [Proposition('not_on_ground', v_hub)]
 )
 
 o_undo = Operator(
     'undo',
-    # Parameters
-    [v_nut, v_hub],
     # Preconditions
-    [Proposition.newish('not_on_ground', [v_hub]),
-     Proposition.newish('not_unfastened', [v_hub]),
-     Proposition.newish('have', [i_wrench]),
-     Proposition.newish('loose', [v_nut, v_hub])],
+    [Proposition('not_on_ground', v_hub),
+     Proposition('not_unfastened', v_hub),
+     Proposition('have', i_wrench),
+     Proposition('loose', v_nut, v_hub)],
     # Adds
-    [Proposition.newish('have', [v_nut]),
-     Proposition.newish('unfastened', [v_hub])],
+    [Proposition('have', v_nut),
+     Proposition('unfastened', v_hub)],
     # Deletes
-    [Proposition.newish('on', [v_nut, v_hub]),
-     Proposition.newish('loose', [v_nut, v_hub]),
-     Proposition.newish('not_unfastened', [v_hub])]
+    [Proposition('on', v_nut, v_hub),
+     Proposition('loose', v_nut, v_hub),
+     Proposition('not_unfastened', v_hub)]
 )
 
 o_do_up = Operator(
     'do_up',
-    # Parameters
-    [v_nut, v_hub],
     # Preconditions
-    [Proposition.newish('have', [i_wrench]),
-     Proposition.newish('unfastened', [v_hub]),
-     Proposition.newish('not_on_ground', [v_hub]),
-     Proposition.newish('have', [v_nut])],
+    [Proposition('have', i_wrench),
+     Proposition('unfastened', v_hub),
+     Proposition('not_on_ground', v_hub),
+     Proposition('have', v_nut)],
     # Adds
-    [Proposition.newish('loose', [v_nut, v_hub]),
-     Proposition.newish('not_unfastened', [v_hub])],
+    [Proposition('loose', v_nut, v_hub),
+     Proposition('not_unfastened', v_hub)],
     # Deletes
-    [Proposition.newish('have', [v_nut]),
-     Proposition.newish('unfastened', [v_hub])]
+    [Proposition('have', v_nut),
+     Proposition('unfastened', v_hub)]
 )
 
 o_remove_wheel = Operator(
     'remove_wheel',
-    # Parameters
-    [v_wheel, v_hub],
     # Preconditions
-    [Proposition.newish('not_on_ground', [v_hub]),
-     Proposition.newish('on', [v_wheel, v_hub]),
-     Proposition.newish('unfastened', [v_hub])],
+    [Proposition('not_on_ground', v_hub),
+     Proposition('on', v_wheel, v_hub),
+     Proposition('unfastened', v_hub)],
     # Adds
-    [Proposition.newish('have', [v_wheel]),
-     Proposition.newish('free', [v_hub])],
+    [Proposition('have', v_wheel),
+     Proposition('free', v_hub)],
     # Deletes
-    [Proposition.newish('on', [v_wheel, v_hub])]
+    [Proposition('on', v_wheel, v_hub)]
 )
 
 o_put_on_wheel = Operator(
     'put_on_wheel',
-    # Parameters
-    [v_wheel, v_hub],
     # Preconditions
-    [Proposition.newish('have', [v_wheel]),
-     Proposition.newish('free', [v_hub]),
-     Proposition.newish('unfastened', [v_hub]),
-     Proposition.newish('not_on_ground', [v_hub])],
+    [Proposition('have', v_wheel),
+     Proposition('free', v_hub),
+     Proposition('unfastened', v_hub),
+     Proposition('not_on_ground', v_hub)],
     # Adds
-    [Proposition.newish('on', [v_wheel, v_hub])],
+    [Proposition('on', v_wheel, v_hub)],
     # Deletes
-    [Proposition.newish('have', [v_wheel]),
-     Proposition.newish('free', [v_hub])]
+    [Proposition('have', v_wheel),
+     Proposition('free', v_hub)]
 )
 
 o_inflate = Operator(
     'inflate',
-    # Parameters
-    [v_wheel],
     # Preconditions
-    [Proposition.newish('have', [i_pump]),
-     Proposition.newish('not_inflated', [v_wheel]),
-     Proposition.newish('intact', [v_wheel])],
+    [Proposition('have', i_pump),
+     Proposition('not_inflated', v_wheel),
+     Proposition('intact', v_wheel)],
     # Adds
-    [Proposition.newish('inflated', [v_wheel])],
+    [Proposition('inflated', v_wheel)],
     # Deletes
-    [Proposition.newish('not_inflated', [v_wheel])]
+    [Proposition('not_inflated', v_wheel)]
 )
 
-prob = PlanningProblem(
+problem = PlanningProblem(
     'fixit_problem',
     # Instances
     [i_wheel1, i_wheel2, i_hub, i_nuts, i_boot, i_jack, i_pump, i_wrench],
@@ -259,36 +232,27 @@ prob = PlanningProblem(
      o_put_away_wheel, o_loosen, o_tighten, o_jack_up, o_jack_down, o_undo,
      o_do_up, o_remove_wheel, o_put_on_wheel, o_inflate],
     # Initial state
-    [Proposition.newish('not_open', [i_boot]),
-     Proposition.newish('intact', [i_wheel2]),
-     Proposition.newish('in', [i_jack, i_boot]),
-     Proposition.newish('in', [i_pump, i_boot]),
-     Proposition.newish('in', [i_wheel2, i_boot]),
-     Proposition.newish('in', [i_wrench, i_boot]),
-     Proposition.newish('on', [i_wheel1, i_hub]),
-     Proposition.newish('on_ground', [i_hub]),
-     Proposition.newish('tight', [i_nuts, i_hub]),
-     Proposition.newish('not_inflated', [i_wheel2]),
-     Proposition.newish('not_unfastened', [i_hub])],
+    [Proposition('not_open', i_boot),
+     Proposition('intact', i_wheel2),
+     Proposition('in', i_jack, i_boot),
+     Proposition('in', i_pump, i_boot),
+     Proposition('in', i_wheel2, i_boot),
+     Proposition('in', i_wrench, i_boot),
+     Proposition('on', i_wheel1, i_hub),
+     Proposition('on_ground', i_hub),
+     Proposition('tight', i_nuts, i_hub),
+     Proposition('not_inflated', i_wheel2),
+     Proposition('not_unfastened', i_hub)],
     # Goals
-    [Proposition.newish('not_open', [i_boot]),
-     Proposition.newish('in', [i_jack, i_boot]),
-     Proposition.newish('in', [i_pump, i_boot]),
-     Proposition.newish('in', [i_wheel1, i_boot]),
-     Proposition.newish('in', [i_wrench, i_boot]),
-     Proposition.newish('tight', [i_nuts, i_hub]),
-     Proposition.newish('inflated', [i_wheel2]),
-     Proposition.newish('on', [i_wheel2, i_hub])])
+    [Proposition('not_open', i_boot),
+     Proposition('in', i_jack, i_boot),
+     Proposition('in', i_pump, i_boot),
+     Proposition('in', i_wheel1, i_boot),
+     Proposition('in', i_wrench, i_boot),
+     Proposition('tight', i_nuts, i_hub),
+     Proposition('inflated', i_wheel2),
+     Proposition('on', i_wheel2, i_hub)])
 
-problem = prob
-
-result = problem.solve()
-
-if result is not None:
-    print('Extracted plan!')
-    for level in result:
-        for action in level:
-            if action.name != NOOP:
-                print(action)
-else:
-    print('No plan found')
+problem.solve()
+problem.display()
+#problem.dump()

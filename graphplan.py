@@ -1,35 +1,23 @@
-# Python implementation of GraphPlan algorithm (Blum & Furst)
-# Originally implemented in Ruby by David S. Touretzky, October 2012
-# Translated to Python by Jonathan Li, October 2018
+# Translation of GraphPlan algorithm (Blum & Furst).
+# Originally implemented in Ruby by David S. Touretzky, October 2012.
+# Translated to Python by Jonathan Li and further extended by
+# David S. Touretzky, October 2018.
 
-from copy import deepcopy
-from pprint import pprint
+### Constants for built-in types, predicates, and actions
+INT = 'int'
 
-NODE_COUNTER = 0
-
-### Defining macros to serve as the equivalent of Ruby Symbols
 EQUAL = 'equal'
+NOT_EQUAL = 'not_equal'
+LESS_THAN = 'less_than'
+LESS_EQUAL = 'less_equal'
+SUM = 'sum'
+
 NOOP = 'noop'
 
-def safeIndex(l, f):
-    '''
-    let l be a list of items [x_i | 0 <= i <= len(l)]
-
-    safeIndex(l,f) returns the index of the first x_i
-    such that f(x_i) == True
-
-    if such an element does not exist, safeIndex returns None
-    '''
-
-    for i in range(len(l)):
-        x = l[i]
-        if f(x):
-            return i
-
-    return None
+# To Do:  check that goals contain no variables
+# Rename demo files, e.g., tire-problem.py, blocks-problems.py
 
 class Instance:
-
     def __init__(self, name, kind):
         self.name = name
         self.kind = kind
@@ -38,7 +26,7 @@ class Instance:
         return str(self.name)
 
     def __repr__(self):
-        return str(self.name)
+        return '<Instance %s: %s>' % (self.name, self.kind)
 
     def __eq__(self, other):
         return (
@@ -46,6 +34,9 @@ class Instance:
             self.name == other.name and
             self.kind == other.kind
         )
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def __hash__(self):
         '''
@@ -55,16 +46,15 @@ class Instance:
         return hash(str(self))
 
 class Variable:
-
     def __init__(self, name, kind):
         self.name = name
         self.kind = kind
 
     def __str__(self):
-        return '?' + str(self.kind) + ':' + str(self.name)
+        return '?' + str(self.name)
 
     def __repr__(self):
-        return '?' + str(self.kind) + ':' + str(self.name)
+        return '<Variable %s: %s>' % (self.name, self.kind)
 
     def __hash__(self):
         return hash(str(self))
@@ -73,8 +63,13 @@ class Variable:
         return self.name == other.name and self.kind == other.kind
 
 
-class Proposition:
+def Proposition(pred, *args):
+    return UniqueProposition.new(pred, args, True)
 
+def NotProposition(pred, *args):
+    return UniqueProposition.new(pred, args, False)
+
+class UniqueProposition:
     prophash = dict()
 
     def __init__(self, pred, args=[], value=True):
@@ -82,31 +77,26 @@ class Proposition:
         self.args = args
         self.value = value
         self.propnum = None
-        if not ([arg for arg in args if isinstance(arg, Variable)]):
-            # can't hash lists in python!
-            signature = (pred, tuple(args), value)
-            Proposition.prophash[signature] = self
-            self.propnum = len(Proposition.prophash)
+        if len([arg for arg in args if isinstance(arg, Variable)]) > 0:
+            return    # Term contains variables, so don't hash it
+        signature = (pred, tuple(args), value)   # can't hash lists in python!
+        UniqueProposition.prophash[signature] = self
+        self.propnum = len(UniqueProposition.prophash)
 
     @classmethod
-    def newish(cls, pred, args, value=True):
+    def new(cls, pred, args, value=True):
         signature = (pred, tuple(args), value)
-        if Proposition.prophash.get(signature, None) is not None:
-            return Proposition.prophash[signature]
+        prop = UniqueProposition.prophash.get(signature, None)
+        if prop is not None:
+            return prop
         else:
-            return Proposition(pred, args, value)
+            return UniqueProposition(pred, args, value)
 
-
-    def __str__(self):
-        if self.propnum:
-            num = str(self.propnum)
-        else:
-            num = ''
-
+    def __repr__(self):
         if self.value:
             sign = ''
         else:
-            '~'
+            sign = '~'
 
         argstring = '('
         argsep = ''
@@ -116,18 +106,18 @@ class Proposition:
             argsep = ','
 
         argstring += ')'
-        return num + ':' + sign + str(self.pred) + argstring
-
-    def __repr__(self):
-        return str(self)
+        return sign + str(self.pred) + argstring
 
     def __eq__(self, other):
         return (
-            isinstance(other, Proposition) and
+            isinstance(other, UniqueProposition) and
             self.pred == other.pred and
             self.args == other.args and
             self.value == other.value
         )
+
+    def __invert__(self):
+        return self.new(self.pred, self.args, not self.value)
 
     def __hash__(self):
         '''
@@ -139,66 +129,125 @@ class Proposition:
 
     def instantiate(self, bindings):
         newargs = [bindings.get(x,x) for x in self.args]
-        return Proposition.newish(self.pred, newargs, self.value)
+        return UniqueProposition.new(self.pred, newargs, self.value)
     
-class Operator:
+def validate_terms(terms):
+    for term in terms:
+        if not isinstance(term, UniqueProposition):
+            raise ValueError('Not a Proposition: %s' % term)
+        if not isinstance(term.pred, str):
+            raise ValueError('Predicate names must be strings, not %s in %s' %
+                             (repr(term.pred), repr(term)))
+        for arg in term.args:
+            if not isinstance(arg, (Variable, Instance)):
+                raise ValueError('Arguments must be variables or instances, not %s in %s' %
+                                 (repr(arg), repr(term)))
 
-    def __init__(self, name, params, precs, adds, deletes):
+class Operator:
+    def __init__(self, name, precs, adds, deletes):
         self.name = name
-        self.params = params
+        self.params = []
         self.precs = precs
         self.adds = adds
         self.deletes = deletes
 
+        self.validate_operator()
+
     def __str__(self):
-        return str(self.name) + str(self.params)
+        return str(self.name) + "(" + str(self.params) + ")"
 
     def __repr__(self):
         return str(self)
-    
+
+    def validate_operator(self):
+        validate_terms(self.precs)
+        validate_terms(self.adds)
+        validate_terms(self.deletes)
+        params = set()
+        for prec in self.precs:
+            for arg in prec.args:
+                if isinstance(arg, Variable):
+                    params.add(arg)
+        self.params = params
+        for term in self.adds + self.deletes:
+            for arg in term.args:
+                if isinstance(arg, Variable) and arg not in params:
+                    raise ValueError('Variable %s must be bound in the preconditions, in %s' %
+                                     (repr(arg), repr(term)))
 
     def generate_bindings(self, instance_table):
-        # generate a list of lists of possible variable bindings for this operator
+        # Generate a list of dicts for possible variable bindings for
+        # this operator.  Along the way, check all preconditions to
+        # eliminate as many binding combinations as possible.
         bindings = [{}]
-        for p in self.params:
-            t = p.kind
+        for param in self.params:
             newbinds = []
-            for inst in instance_table[t]:
-                bindings_copy = deepcopy(bindings)
-                for i in range(len(bindings_copy)):
-                    bindings_copy[i][p] = inst
+            for inst in instance_table[param.kind]:
+                bindings_copy = [binding.copy() for binding in bindings]
+                for binding in bindings_copy:
+                    binding[param] = inst
+                bindings_copy = [binding for binding in bindings_copy if self.check_binding(binding)]
                 newbinds = newbinds + bindings_copy
             bindings = newbinds
+        #print(self.name,"#candidate bindings=",len(bindings))
         return bindings
+
+    def check_binding(self, binding):
+        # Returns True if the binding is compatible with all precondition tests.
+        # If the binding doesn't cover some variables, those tests will be skipped.
+        for prec in self.precs:
+            if (prec.pred == EQUAL) or (prec.pred == NOT_EQUAL):
+                arg1 = prec.args[0]
+                arg2 = prec.args[1]
+                if arg1 in binding: arg1 = binding[arg1]
+                if arg2 in binding: arg2 = binding[arg2]
+                if isinstance(arg1, Instance) and isinstance(arg2, Instance):
+                    if (arg1 == arg2):
+                        if (prec.pred == NOT_EQUAL) == prec.value: return False
+                    elif (prec.pred == EQUAL) == prec.value: return False
+            elif (prec.pred == LESS_THAN) or (prec.pred == LESS_EQUAL):
+                arg1 = prec.args[0]
+                arg2 = prec.args[1]
+                if arg1 in binding: arg1 = binding[arg1]
+                if arg2 in binding: arg2 = binding[arg2]
+                if isinstance(arg1, Instance) and isinstance(arg2, Instance):
+                    if prec.pred == LESS_THAN:
+                        if ((arg1.name < arg2.name) != prec.value): return False
+                    elif prec.pred == LESS_EQUAL:
+                        if ((arg1.name <= arg2.name) != prec.value): return False
+            elif prec.pred == SUM:
+                arg1 = prec.args[0]
+                arg2 = prec.args[1]
+                arg3 = prec.args[2]
+                if arg1 in binding: arg1 = binding[arg1]
+                if arg2 in binding: arg2 = binding[arg2]
+                if arg3 in binding: arg3 = binding[arg3]
+                if (isinstance(arg1, Instance) and
+                    isinstance(arg2, Instance) and
+                    isinstance(arg3, Instance)):
+                    if (arg1.name + arg2.name == arg3.name) != prec.value: return False
+        return True
 
     def generate_bindprops(self, propnodes, instance_table):
         bindings = self.generate_bindings(instance_table)
         bindprops = []
+        builtins = set([EQUAL, NOT_EQUAL, LESS_THAN, LESS_EQUAL, SUM])
         for bind in bindings:
             props = []
             for prec in self.precs:
-                bprec = prec.instantiate(bind)
-                if bprec.pred == EQUAL:
-                    if (bprec.args[0] == bprec.args[1]) != bprec.value:
-                        props = None
-                        break
-                else:
+                if prec.pred not in builtins:
+                    bprec = prec.instantiate(bind)
                     pnodes = [pn for pn in propnodes if pn.prop == bprec]
                     if (len(pnodes) == 0):
                         props = None
+                        break
                     else:
                         props.append(pnodes[0])
-                if props is None:
-                    break
-            bindprops = (
-                bindprops + [BindProp(bind, props)]
-                if props is not None else bindprops
-            )
+            bindprops = (bindprops + [BindProp(bind, props)] if props is not None else bindprops)
         return bindprops
 
 
 class BindProp:
-
     def __init__(self, bindings, propnodes):
         self.bindings = bindings
         self.propnodes = propnodes
@@ -219,25 +268,24 @@ class BindProp:
         return None
 
 class PropNode:
+    node_counter = 0
 
     def __init__(self, prop, level):
-        global NODE_COUNTER
+        PropNode.node_counter += 1
         self.prop = prop
         self.level = level
-        self.number = NODE_COUNTER + 1
-        NODE_COUNTER += 1
-        self.propnum = None
+        self.propnum = prop.propnum
         self.adders = []
         self.deleters = []
         self.users = []
         self.excludes = []
 
-    def __str__(self):
+    def __repr__(self):
         pname = str(self.prop)
         return pname
 
-    def __repr__(self):
-        return str(self)
+    def dump_str(self):
+        return '%3d:%s' % (self.propnum, str(self))
 
     def excludes_prop(self, pnode):
         for anode in self.adders:
@@ -280,29 +328,31 @@ class PropNode:
         return hash(str(self))
 
 class ActionNode:
+    node_counter = 0
 
     def __init__(self, name, level, binds, precs):
-        global NODE_COUNTER
         self.name = name
         self.level = level
-        self.number = NODE_COUNTER + 1
-        NODE_COUNTER += 1
+        ActionNode.node_counter += 1
+        self.number = ActionNode.node_counter
         self.binds = binds
         self.precs = precs
         self.adds = []
         self.deletes = []
         self.excludes = []
 
-    def __str__(self):
-        if self.name == NOOP:
-            args = str(self.precs[0])
-            args = args[(args.index(':') + 1) : ]
-        else:
-            args = str(self.binds)
-        return str(self.level) + str(self.name) + ('-%d ' % self.number) + args
-
     def __repr__(self):
-        return str(self)
+        if self.name == NOOP:
+            return str(self.name) + ' ' + str(self.precs[0])
+        else:
+            args = '(' + ', '.join(['%s: %s' % (str(var),str(val)) for (var,val) in self.binds.items()]) + ')'
+            return str(self.name) + ' ' + args
+
+    def __lt__(self, other):
+        return self.number < other.number
+
+    def dump_str(self):
+        return '%3d-%s' % (self.number, str(self))
 
     def deletes_addition(self, anode):
         # determines if the intersection is non-empty
@@ -325,7 +375,6 @@ class ActionNode:
         return False
 
 class PlanningProblem:
-
     def __init__(self, name, instances, operators, initial, goals):
         self.name = name
         self.instances = instances
@@ -336,9 +385,13 @@ class PlanningProblem:
         self.actionLevels = []
         self.level = -1
         self.unsolvable_goalsets = [dict()]
+        self.result = None
 
         self.generate_instance_table()
         self.populate_prop_level_0()
+
+        validate_terms(initial)
+        validate_terms(goals)
 
     def generate_instance_table(self):
         self.instance_table = dict()
@@ -359,6 +412,7 @@ class PlanningProblem:
         self.propLevels.append([])
         self.unsolvable_goalsets.append(dict())
         self.level += 1
+        print("Generating level", self.level, '-> level', self.level+1)
 
         self.generate_noop_actions()
 
@@ -380,6 +434,7 @@ class PlanningProblem:
 
     def generate_operator_actions(self, op):
         bindprops = op.generate_bindprops(self.propLevels[-2], self.instance_table)
+        # print(op.name, "#bindprops=", len(bindprops))
         bindprops = [bp for bp in bindprops
                      if bp.preconditions_excluded() is None]
         self.actionLevels[-1] += [self.generate_action_node(op,bp)
@@ -392,15 +447,13 @@ class PlanningProblem:
             pnode.users.append(anode)
 
         anode.adds = [
-            self.get_propnode(prop.instantiate(bp.bindings), self.level+1)
-            for prop in op.adds
+            self.get_propnode(prop.instantiate(bp.bindings), self.level+1) for prop in op.adds
         ]
         for pnode in anode.adds:
             pnode.adders.append(anode)
 
         anode.deletes = [
-            self.get_propnode(prop.instantiate(bp.bindings), self.level+1)
-            for prop in op.deletes
+            self.get_propnode(prop.instantiate(bp.bindings), self.level+1) for prop in op.deletes
         ]
         for pnode in anode.deletes:
             pnode.deleters.append(anode)
@@ -468,24 +521,33 @@ class PlanningProblem:
         return pnode
 
     def solve(self):
+        print('Solving', self.name, '...')
+        PropNode.node_counter = 0
+        ActionNode.node_counter = 0
+        if self.level != -1:
+            raise ValueError('Problem has already been solved.')
         while not self.terminate():
             self.extend_graph_level()
             goals = [self.get_existing_propnode(g, self.level+1)
                      for g in self.goals]
             if None in goals:
-                print('Some goal props not instantiated at level %d'
-                      % (self.level+1))
+                print('Some goal props not instantiated at level %d' % \
+                      (self.level+1))
             elif self.mutually_exclusive(goals):
-                print('Some goals are mutually exclusive at level %d'
-                      % (self.level+1))
+                print('Some goals are mutually exclusive at level %d' % \
+                      (self.level+1))
             else:
                 result = self.solve_goals(goals, [], goals, [])
                 if result is not None:
+                    print('Generated %d proposition nodes and %d action nodes total.' % \
+                          (PropNode.node_counter, ActionNode.node_counter))
                     return result
                 else:
-                    print('No solution at level %d' % (self.level + 1))
-
-        print('Problem has no solution!')
+                    print('No solution at level %d with %d proposition nodes and %d action nodes' % \
+                        (self.level + 1, PropNode.node_counter, ActionNode.node_counter))
+        print('Problem has no solution!  Generated %d proposition nodes and %d action nodes total.' % \
+              (PropNode.node_counter, ActionNode.node_counter))
+        print(goals)
         return None
 
     '''
@@ -503,8 +565,8 @@ class PlanningProblem:
             else:
                 new_goals.sort()
                 new_goals = tuple(new_goals) # needs to be a hashable type!
-                if self.unsolvable_goalsets[new_goals[0].level]\
-                       .get(new_goals,None):
+                if self.unsolvable_goalsets[new_goals[0].level].get(new_goals,None):
+                    #print("Found unsolvable: ", new_goals)
                     return None
                 result = self.solve_goals(new_goals, new_goals,
                                      [], [[]] + selected_actions)
@@ -512,8 +574,8 @@ class PlanningProblem:
                     return result
                 else:
                     # no action solves this goal set, so mark as unsolvable
-                    self.unsolvable_goalsets\
-                        [new_goals[0].level][new_goals] = True
+                    #print("--> Added unsolvable:", new_goals)
+                    self.unsolvable_goalsets[new_goals[0].level][new_goals] = True
                     return None
 
         # Work on the next goal at the current level
@@ -521,7 +583,7 @@ class PlanningProblem:
         actions = goal.adders
         for a in actions:
             # Make sure this action isn't excluded by any actions already selected
-            if safeIndex(selected_actions[0], lambda s: a in s.excludes) is None:
+            if self.safe_index(selected_actions[0], lambda s: a in s.excludes) is None:
                 new_actions = [selected_actions[0] + [a]] + selected_actions[1:]
                 if ((not self.forward_cutoff(goals_remaining[1:], new_actions[0]))
                     and self.minimal_action_set(goals, new_actions[0])):
@@ -530,10 +592,20 @@ class PlanningProblem:
                     next_new_goals = new_goals + [g for g in a.precs if
                                                   g not in new_goals]
                     result = self.solve_goals(goals, next_goals_remaining,
-                                         next_new_goals, new_actions)
+                                              next_new_goals, new_actions)
                     if result is not None:
+                        self.result = result
                         return result
 
+        return None
+
+    def safe_index(self, l, f):
+        '''
+        safe_index returns the index of the first x_i
+        in l such that f(x_i) is True, else None
+        '''
+        for i in range(len(l)):
+            if f(l[i]): return i
         return None
 
     def mutually_exclusive(self, goals):
@@ -589,30 +661,43 @@ class PlanningProblem:
             return False
         return True
 
+    def display(self):
+        if self.result:
+            print("Plan found:")
+            for level in self.result:
+                for action in level:
+                    if action.name != NOOP:
+                        print('%3d:' % action.level, action)
+        else:
+            print("No plan found.")
+
     def dump(self):
+        print("Dump of planning graph:")
         for level in range(len(self.propLevels)):
-            print(('*'*16) + (' Level %d ' % self.level) + ('*'*16))
+            print(('*'*16) + (' Level %d ' % level) + ('*'*16))
             print('Proposition nodes: (' + str(len(self.propLevels[level])) + ')')
             self.propLevels[level].sort()
             for p in self.propLevels[level]:
-                pname = str(p)
-                print('  ' + pname)
+                pname = p.dump_str()
+                print(' ' + pname,end='')
                 if (len(p.excludes) > 0):
-                    print(' excl (%d)'  % len(p.excludes))
+                    p.excludes.sort()
+                    print('excl (%d)'  % len(p.excludes), end='')
                     for e in p.excludes:
-                        print(' %d' % (e.prop.propnum))
-                print('\n')
+                        print('%d' % (e.prop.propnum), end='')
+                print()
 
             if level < len(self.actionLevels):
                 print('Action nodes: (%d)' % len(self.actionLevels[level]))
                 for a in self.actionLevels[level]:
-                    aname = str(a)
-                    print('  ' + aname)
+                    aname = a.dump_str()
+                    print(' ' + aname, end='')
                     if len(a.excludes) > 0:
-                        print(' excl (%d):' % len(a.excludes))
+                        a.excludes.sort()
+                        print('excl (%d):' % len(a.excludes), end='')
                         for e in a.excludes:
-                            print(' %d' % e.number)
-                    print('\n')
-            print
+                            print('%d' % e.number, end='')
+                    print()
+            print()
 
         return None
